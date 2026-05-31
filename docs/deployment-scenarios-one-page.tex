@@ -1,0 +1,380 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+\documentclass[
+]{article}
+\usepackage{xcolor}
+\usepackage{amsmath,amssymb}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\author{}
+\date{}
+
+\begin{document}
+
+\section{GCP Deployment Scenarios and Architecture Decisions
+(One-Page)}\label{gcp-deployment-scenarios-and-architecture-decisions-one-page}
+
+\subsection{Objective}\label{objective}
+
+Deliver the same online boutique application across three deployment
+scenarios on GCP while keeping checkout reliable, data durable, and
+operations practical for different scale and team maturity levels.
+
+\subsection{Terminology (Quick
+Clarifications)}\label{terminology-quick-clarifications}
+
+\begin{itemize}
+\tightlist
+\item
+  Sidecar: an additional container running in the same runtime boundary
+  as a primary service container. It provides supporting capabilities
+  (for example, database connectivity proxy or co-located dependency)
+  while communicating over localhost.
+\item
+  RBAC: Role-Based Access Control.
+\item
+  TLS: Transport Layer Security.
+\item
+  IAM: Identity and Access Management.
+\item
+  Pub/Sub: Publish/Subscribe messaging.
+\end{itemize}
+
+\subsection{Application Components}\label{application-components}
+
+\begin{itemize}
+\tightlist
+\item
+  User-facing: frontend
+\item
+  Core commerce services: productcatalogservice, cartservice (with
+  redis-cart), recommendationservice, checkoutservice, paymentservice,
+  shippingservice, currencyservice, emailservice, adservice
+\item
+  Data services: Cloud SQL for PostgreSQL (transactional orders),
+  Firestore (inventory metadata/state)
+\item
+  Eventing: Google Cloud Pub/Sub topic order-notifications
+\item
+  Additional serverless components: Cloud Run service order-workflow,
+  Cloud Function subscriber for notifications/workflows
+\end{itemize}
+
+\subsection{Scenario 1: VM Deployment (Compute Engine + Docker
+Compose)}\label{scenario-1-vm-deployment-compute-engine-docker-compose}
+
+\begin{itemize}
+\tightlist
+\item
+  Runtime model: all microservices run as containers on one VM.
+\item
+  Networking: internal service-to-service calls on compose network names
+  and ports.
+\item
+  Data path: checkoutservice writes to Cloud SQL (private IP or Cloud
+  SQL proxy path).
+\item
+  Best fit: low complexity, lower traffic, fast debugging, direct host
+  control.
+\item
+  Tradeoff: manual scaling, patching, and host lifecycle ownership.
+\end{itemize}
+
+\subsection{Scenario 2: Container Platform Deployment
+(GKE)}\label{scenario-2-container-platform-deployment-gke}
+
+\begin{itemize}
+\tightlist
+\item
+  Runtime model: microservices as Kubernetes Deployments/Services.
+\item
+  Networking: Kubernetes service discovery and cluster networking.
+\item
+  Data path: checkoutservice uses Cloud SQL Auth Proxy sidecar for Cloud
+  SQL access.
+\item
+  Best fit: production-grade orchestration, rolling updates,
+  fine-grained controls.
+\item
+  Tradeoff: highest ops overhead (cluster lifecycle, Role-Based Access
+  Control (RBAC), node and policy management).
+\end{itemize}
+
+\subsection{Scenario 3: Serverless Platform Deployment (Cloud
+Run)}\label{scenario-3-serverless-platform-deployment-cloud-run}
+
+\begin{itemize}
+\tightlist
+\item
+  Runtime model: either single service (for order-workflow) or
+  multi-container sidecar service for boutique components.
+\item
+  Networking:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    Sidecar model: localhost ports between containers, Transport Layer
+    Security (TLS) disabled for in-process hop.
+  \item
+    Split-service model: service.run.app:443 endpoints, Transport Layer
+    Security (TLS) enabled.
+  \end{itemize}
+\item
+  Data path: order-workflow on Cloud Run writes to Cloud SQL, updates
+  Firestore, and publishes Google Cloud Pub/Sub events.
+\item
+  Best fit: variable traffic, rapid delivery, minimal infrastructure
+  management.
+\item
+  Tradeoff: per-revision container limits, stricter runtime constraints,
+  careful env/port/Transport Layer Security (TLS) alignment required.
+\end{itemize}
+
+\subsection{Why These Architecture Decisions Were
+Made}\label{why-these-architecture-decisions-were-made}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  Cloud SQL (PostgreSQL) for order records
+\end{enumerate}
+
+\begin{itemize}
+\tightlist
+\item
+  Reason: checkout and order history are strongly relational and require
+  transactional integrity (order header + order items), SQL
+  queryability, and predictable consistency.
+\item
+  Result: normalized tables (customer\_order, order\_item) and ACID
+  semantics for financial events.
+\end{itemize}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\setcounter{enumi}{1}
+\tightlist
+\item
+  Firestore for inventory metadata
+\end{enumerate}
+
+\begin{itemize}
+\tightlist
+\item
+  Reason: inventory and product state updates are document-shaped and
+  evolve quickly; schema flexibility and low-latency key access are
+  valuable.
+\item
+  Result: simple product-centric reads/writes
+  (inventory/\{product\_id\}) without relational migration friction.
+\end{itemize}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\setcounter{enumi}{2}
+\tightlist
+\item
+  Why AlloyDB, MySQL, or SQL Server were not selected
+\end{enumerate}
+
+\begin{itemize}
+\tightlist
+\item
+  AlloyDB (PostgreSQL-compatible): strong option, but this project did
+  not require its premium performance profile or operational features at
+  current scale; Cloud SQL for PostgreSQL provided sufficient
+  transactional capability with lower complexity and cost for the
+  assignment scope.
+\item
+  Cloud SQL for MySQL: technically feasible, but the existing schema and
+  scripts align with PostgreSQL behavior and ecosystem; switching
+  engines would add migration and compatibility effort without clear
+  functional benefit.
+\item
+  Cloud SQL for SQL Server: not chosen due to higher licensing/cost
+  considerations and unnecessary platform coupling for this
+  microservices demo workload.
+\item
+  Result: Cloud SQL for PostgreSQL offered the best fit for
+  compatibility, predictable operations, and rubric-focused
+  implementation speed.
+\end{itemize}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\setcounter{enumi}{3}
+\tightlist
+\item
+  Pub/Sub for decoupling post-checkout actions
+\end{enumerate}
+
+\begin{itemize}
+\tightlist
+\item
+  Reason: order completion should not block on downstream notification
+  or enrichment steps.
+\item
+  Result: asynchronous, resilient event-driven fanout with retry
+  semantics.
+\end{itemize}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\setcounter{enumi}{4}
+\tightlist
+\item
+  Additional serverless service (Cloud Function subscriber)
+\end{enumerate}
+
+\begin{itemize}
+\tightlist
+\item
+  Reason: notification, audit, and downstream integration logic is
+  event-driven and bursty; serverless is cost-efficient and
+  operationally light.
+\item
+  Result: Cloud Function scales on demand from Pub/Sub events and keeps
+  checkout latency stable.
+\end{itemize}
+
+\subsection{Pub/Sub Invocation Point and
+Embedding}\label{pubsub-invocation-point-and-embedding}
+
+\begin{itemize}
+\tightlist
+\item
+  Is Pub/Sub invoked during checkout: yes, but after order placement has
+  been accepted and persisted by order-workflow.
+\item
+  Which service publishes: order-workflow (Cloud Run) publishes
+  ORDER\_CREATED to the order-notifications topic.
+\item
+  Is Pub/Sub embedded in checkoutservice: no. checkoutservice calls
+  order-workflow; order-workflow owns publish logic so checkout can stay
+  focused on transaction orchestration.
+\item
+  Why this matters: checkout latency remains stable because notification
+  delivery is asynchronous.
+\end{itemize}
+
+\subsection{What ``Order Notification'' Means
+Here}\label{what-order-notification-means-here}
+
+\begin{itemize}
+\tightlist
+\item
+  An order notification is an event payload (for example ORDER\_CREATED
+  with order\_id, user\_email, totals, and items) emitted to Pub/Sub.
+\item
+  Consumers (such as a Cloud Function) process that event for
+  non-blocking downstream actions: confirmation email, audit entry,
+  analytics stream update, fraud rules, or fulfillment integration.
+\item
+  It is a technical event contract, not only an end-user email.
+\end{itemize}
+
+\subsection{Serverless Additional Service Interaction Across
+Scenarios}\label{serverless-additional-service-interaction-across-scenarios}
+
+Common pattern used by VM, GKE, and Cloud Run storefront variants: 1.
+User checks out via frontend and checkoutservice. 2. checkoutservice
+invokes order-workflow /order-events. 3. order-workflow persists order
+to Cloud SQL and updates Firestore. 4. order-workflow publishes
+ORDER\_CREATED to Pub/Sub. 5. Cloud Function subscriber consumes event
+and performs email/SMS/CRM/audit actions.
+
+Because this integration is event-driven and endpoint-based, the same
+serverless function can support all three deployment scenarios without
+changing core checkout behavior.
+
+\subsection{Why Markdown (.md) Is Good for This
+Deliverable}\label{why-markdown-.md-is-good-for-this-deliverable}
+
+\begin{itemize}
+\tightlist
+\item
+  Portable and lightweight plain text (easy to version in Git and review
+  in pull requests).
+\item
+  Human-readable in raw form and well-rendered in GitHub/GitLab/VS Code.
+\item
+  Fast to update during architecture changes without proprietary tool
+  lock-in.
+\item
+  Easy to export to Word/PDF when submission format requires it.
+\end{itemize}
+
+\subsection{Rubric Coverage
+(Demonstrated)}\label{rubric-coverage-demonstrated}
+
+\begin{itemize}
+\tightlist
+\item
+  Architecture clarity: three deployment topologies and component
+  boundaries are explicit.
+\item
+  Data design rationale: relational vs document storage justified by
+  workload shape.
+\item
+  Security model: private DB connectivity, secret management, Identity
+  and Access Management (IAM)-based service access.
+\item
+  Reliability: async eventing, retries, and reduced checkout critical
+  path dependencies.
+\item
+  Scalability: VM (vertical/manual), GKE (horizontal/orchestrated),
+  Cloud Run/Functions (autoscale).
+\item
+  Cost/operations: VM lowest abstraction, GKE highest control/overhead,
+  serverless best for elastic demand.
+\item
+  Integration quality: one event contract supports all scenarios
+  consistently.
+\item
+  Maintainability: shared business flow with environment-specific
+  runtime choices.
+\end{itemize}
+
+\end{document}

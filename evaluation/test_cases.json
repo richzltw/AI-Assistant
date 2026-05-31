@@ -1,0 +1,17 @@
+[
+  {
+    "id": "plan-week",
+    "prompt": "Plan a one-week study schedule for cloud AI with 2 hours each weekday.",
+    "must_include": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+  },
+  {
+    "id": "tool-search",
+    "prompt": "Find two recent updates about Gemini and summarize them.",
+    "must_include": ["source", "summary"]
+  },
+  {
+    "id": "automation",
+    "prompt": "Use automation to get current UTC time.",
+    "must_include": ["UTC", "time"]
+  }
+]

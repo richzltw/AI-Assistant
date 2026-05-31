@@ -1,0 +1,23 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-t", "$_IMAGE", "."]
+  - name: gcr.io/cloud-builders/docker
+    args: ["push", "$_IMAGE"]
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - $_SERVICE
+      - --image=$_IMAGE
+      - --region=$_REGION
+      - --platform=managed
+      - --allow-unauthenticated
+      - --set-env-vars=PROJECT_ID=$_PROJECT_ID,REGION=$_REGION,SERVICE_NAME=$_SERVICE
+images:
+  - $_IMAGE
+substitutions:
+  _PROJECT_ID: your-gcp-project-id
+  _REGION: us-central1
+  _SERVICE: gcp-multimodal-assistant
+  _IMAGE: us-central1-docker.pkg.dev/your-gcp-project-id/assistant/gcp-multimodal-assistant:latest

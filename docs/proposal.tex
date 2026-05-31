@@ -1,0 +1,149 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+\documentclass[
+]{article}
+\usepackage{xcolor}
+\usepackage{amsmath,amssymb}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\author{}
+\date{}
+
+\begin{document}
+
+\section{Proposal: Cloud-Native Multimodal AI Study Assistant
+(GCP)}\label{proposal-cloud-native-multimodal-ai-study-assistant-gcp}
+
+\subsection{1. Problem Statement}\label{problem-statement}
+
+Students and early-career professionals often struggle to combine
+planning, research, and automation in one place when learning technical
+topics. They switch between search engines, notes apps, shell tools, and
+calendars, which adds friction and reduces focus. This project addresses
+that problem by building a cloud-hosted AI assistant that can answer
+questions, summarize findings, automate simple tasks, and support voice
+interaction.
+
+\subsection{2. Intended Users}\label{intended-users}
+
+\begin{itemize}
+\tightlist
+\item
+  Primary users: university students learning cloud and AI topics.
+\item
+  Secondary users: professionals who need quick decision support for
+  scheduling, research, or planning.
+\item
+  Personal use: self-study assistant for structured weekly goals and
+  actionable task breakdowns.
+\end{itemize}
+
+\subsection{3. Cloud Platform and Planned
+Services}\label{cloud-platform-and-planned-services}
+
+Platform: Google Cloud Platform (GCP)
+
+Planned cloud-native components: - Cloud Run: hosts the assistant
+backend API. - Cloud Functions (2nd gen): external tool endpoint for
+automation actions. - Firestore: lightweight persistent storage for
+assistant notes/facts. - Cloud Speech-to-Text: transcribes user voice
+input. - Cloud Text-to-Speech: converts assistant responses to audio. -
+Artifact Registry + Cloud Build: image storage and CI/CD deployment
+pipeline.
+
+Cross-cloud/hybrid extension: - Hybrid mode with local client + cloud
+backend (local user interface calling GCP-hosted API). - Optional
+fallback LLM provider integration for interoperability testing.
+
+\subsection{4. Type of AI Assistant}\label{type-of-ai-assistant}
+
+This project will implement a multimodal cloud AI assistant with: - Text
+chat for Q and A, planning, and summarization. - Voice input/output for
+accessibility and hands-free use. - Tool-calling support for web search,
+database lookup, cloud function automation, and sandboxed shell
+commands. - Practical use case: generating weekly study plans,
+summarizing recent topic updates, and running automation actions (for
+example, getting UTC time).
+
+\subsection{Proposed Deliverables}\label{proposed-deliverables}
+
+\begin{itemize}
+\tightlist
+\item
+  Deployed assistant endpoint running on Cloud Run.
+\item
+  At least one AI model/API: Gemini LLM, plus speech services.
+\item
+  Cloud-native architecture with serverless services and storage.
+\item
+  Evaluation results using defined test cases.
+\item
+  Final report with architecture, data flow, metrics, limitations, and
+  future work.
+\end{itemize}
+
+\subsection{Security and Privacy
+Approach}\label{security-and-privacy-approach}
+
+Identified risks: - API key leakage from source code or logs. - Command
+injection through tool-calling shell interface.
+
+Mitigations: - API keys stored in environment variables (or Secret
+Manager in production), never hard-coded. - Input sanitization and
+strict allow-list policy for shell commands.
+
+\subsection{Success Criteria}\label{success-criteria}
+
+\begin{itemize}
+\tightlist
+\item
+  Assistant can accept input and return useful AI-generated output.
+\item
+  At least one practical scenario is completed end-to-end.
+\item
+  Evaluation average score \textgreater= 0.70 on rubric-based test set.
+\item
+  Demonstrated multimodal value over text-only baseline.
+\end{itemize}
+
+\end{document}

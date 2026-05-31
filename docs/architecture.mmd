@@ -1,0 +1,11 @@
+flowchart TD
+    U[User: Web or Local Client] --> API[Cloud Run: FastAPI Assistant Service]
+    API --> LLM[Gemini API]
+    API --> STT[Cloud Speech-to-Text]
+    API --> TTS[Cloud Text-to-Speech]
+    API --> FS[Firestore]
+    API --> CF[Cloud Function Tool Router]
+    API --> WS[External Web Search API]
+    API --> SH[Sandboxed Shell Tool]
+    CB[Cloud Build] --> AR[Artifact Registry]
+    AR --> API
