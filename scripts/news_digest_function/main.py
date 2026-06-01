@@ -26,6 +26,28 @@ DEFAULT_FEEDS = [
 ]
 
 
+def _digest_max_chars() -> int:
+    raw = os.getenv("DIGEST_MAX_CHARS", "4000").strip()
+    try:
+        value = int(raw)
+    except Exception:
+        return 4000
+    return max(500, min(value, 20000))
+
+
+def _bound_digest_markdown(markdown: str) -> str:
+    value = (markdown or "").strip()
+    max_chars = _digest_max_chars()
+    if len(value) <= max_chars:
+        return value
+
+    suffix = "\n\n[...truncated to fit chat history boundary...]"
+    keep = max_chars - len(suffix)
+    if keep <= 0:
+        return value[:max_chars]
+    return value[:keep].rstrip() + suffix
+
+
 def _now_iso() -> str:
     return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
@@ -378,7 +400,7 @@ def handler(request):
 
     generated_at = _now_iso()
     headlines = _collect_headlines()
-    digest_markdown = _render_markdown_with_llm(headlines, generated_at)
+    digest_markdown = _bound_digest_markdown(_render_markdown_with_llm(headlines, generated_at))
 
     slack_result = _post_slack(digest_markdown)
     sms_result = _post_twilio_sms(digest_markdown)

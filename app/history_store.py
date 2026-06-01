@@ -11,7 +11,13 @@ from app.config import settings
 
 class ChatHistoryStore:
     def __init__(self) -> None:
-        self.client = firestore.Client(project=settings.project_id) if settings.project_id else None
+        self.client = None
+        if settings.project_id:
+            try:
+                self.client = firestore.Client(project=settings.project_id)
+            except Exception:
+                # Allow local app startup without ADC; history persistence is disabled in this mode.
+                self.client = None
 
     def save_message(
         self,
@@ -182,6 +188,37 @@ class ChatHistoryStore:
                 }
             )
         return rows
+
+    def get_latest_daily_digest(self) -> Optional[Dict[str, Any]]:
+        if not self.client:
+            return None
+
+        docs = (
+            self.client.collection("daily_news_digest")
+            .order_by("created_at", direction=firestore.Query.DESCENDING)
+            .limit(1)
+            .stream()
+        )
+
+        for doc in docs:
+            item = doc.to_dict() or {}
+
+            created_at = item.get("created_at")
+            if isinstance(created_at, datetime):
+                created = created_at.astimezone(timezone.utc).isoformat()
+            else:
+                created = None
+
+            return {
+                "id": doc.id,
+                "generated_at": item.get("generated_at"),
+                "digest_markdown": item.get("digest_markdown", ""),
+                "headlines": item.get("headlines", []),
+                "deliveries": item.get("deliveries", {}),
+                "created_at": created,
+            }
+
+        return None
 
 
 history_store = ChatHistoryStore()

@@ -1,0 +1,3 @@
+﻿latest_ready_revision=gcp-multimodal-assistant-00022-qrf
+service_url=https://gcp-multimodal-assistant-agazersooq-uc.a.run.app
+backup_created_at=20260601-001250

@@ -2,7 +2,8 @@ import base64
 import io
 import json
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from google.api_core import exceptions as google_exceptions
 from fastapi.responses import HTMLResponse, JSONResponse
 from google.cloud import speech, texttospeech
 from pypdf import PdfReader
@@ -15,6 +16,19 @@ from app.models import ChatRequest, ChatResponse, VoiceSynthesisRequest
 from app.security import enforce_bearer_token, sanitize_text
 
 app = FastAPI(title="GCP Multimodal Assistant", version="1.0.0")
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:
+    _ = exc
+    return JSONResponse(
+        {
+            "ok": False,
+            "error": "internal_error",
+            "message": "Internal server error",
+        },
+        status_code=500,
+    )
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -46,6 +60,7 @@ def home() -> str:
                     min-height: 100vh;
                     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
                     color: var(--text);
+                    overflow-x: hidden;
                     background:
                         radial-gradient(circle at top left, rgba(125, 211, 252, 0.22), transparent 30%),
                         radial-gradient(circle at bottom right, rgba(52, 211, 153, 0.18), transparent 28%),
@@ -53,10 +68,12 @@ def home() -> str:
                 }
                 main {
                     max-width: 1120px;
+                    width: 100%;
                     margin: 0 auto;
                     padding: 36px 20px 32px;
                     display: grid;
                     gap: 16px;
+                    min-width: 0;
                 }
                 .card {
                     padding: 18px;
@@ -64,6 +81,9 @@ def home() -> str:
                     border: 1px solid var(--border);
                     background: var(--panel);
                     backdrop-filter: blur(10px);
+                    min-width: 0;
+                    max-width: 100%;
+                    overflow: hidden;
                 }
                 .hero {
                     padding: 26px;
@@ -200,6 +220,28 @@ def home() -> str:
                     color: var(--muted);
                 }
                 .status { margin-top: 8px; color: var(--muted); font-size: 0.9rem; }
+                .digest-content {
+                    border: 1px solid var(--border);
+                    border-radius: 12px;
+                    padding: 12px;
+                    margin-top: 12px;
+                    background: rgba(0, 0, 0, 0.2);
+                    min-height: 200px;
+                    max-height: 420px;
+                    width: 100%;
+                    max-width: 100%;
+                    min-width: 0;
+                    box-sizing: border-box;
+                    overflow-y: auto;
+                    overflow-x: hidden;
+                    white-space: pre-wrap;
+                    overflow-wrap: anywhere;
+                    word-break: break-word;
+                    line-height: 1.5;
+                }
+                .digest-content.expanded {
+                    max-height: 70vh;
+                }
             </style>
         </head>
         <body>
@@ -207,6 +249,17 @@ def home() -> str:
                 <section class="hero">
                     <h1>GCP Multimodal Assistant</h1>
                     <p>Use this page as a real multimodal assistant: type or speak your question, then read and listen to the reply.</p>
+                </section>
+
+                <section class="card">
+                    <h2>Daily News Digest</h2>
+                    <p>Latest scheduled briefing from the daily 7:00 AM workflow.</p>
+                    <div class="row">
+                        <button id="refreshDigestBtn" class="secondary">Refresh Digest</button>
+                        <button id="toggleDigestBtn" class="secondary" style="display:none;">Expand</button>
+                        <span class="meta" id="digestStatus">Loading latest digest...</span>
+                    </div>
+                    <div id="digestContent" class="digest-content">Loading...</div>
                 </section>
 
                 <section class="card">
@@ -256,12 +309,32 @@ def home() -> str:
                 const selectFileBtn = document.getElementById("selectFileBtn");
                 const chatFile = document.getElementById("chatFile");
                 const selectedFileName = document.getElementById("selectedFileName");
+                const refreshDigestBtn = document.getElementById("refreshDigestBtn");
+                const toggleDigestBtn = document.getElementById("toggleDigestBtn");
+                const digestStatus = document.getElementById("digestStatus");
+                const digestContent = document.getElementById("digestContent");
                 const CHAT_USER_ID = "web-ui-user";
 
                 const audioPlayer = document.getElementById("audioPlayer");
                 let isRecording = false;
                 let speechRecognition = null;
+                let mediaRecorder = null;
+                let mediaStream = null;
+                let recordedChunks = [];
                 let currentSessionId = "";
+                let digestExpanded = false;
+
+                function updateDigestBoundaryControls() {
+                    if (digestExpanded) {
+                        digestContent.classList.add("expanded");
+                    } else {
+                        digestContent.classList.remove("expanded");
+                    }
+
+                    const hasOverflow = digestContent.scrollHeight > digestContent.clientHeight + 2;
+                    toggleDigestBtn.style.display = hasOverflow || digestExpanded ? "inline-flex" : "none";
+                    toggleDigestBtn.textContent = digestExpanded ? "Collapse" : "Expand";
+                }
 
                 function makeSessionId() {
                     return "session-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
@@ -309,11 +382,51 @@ def home() -> str:
                     return d.toLocaleString();
                 }
 
+                async function parseJsonResponse(res) {
+                    const text = await res.text();
+                    if (!text) {
+                        return {};
+                    }
+                    try {
+                        return JSON.parse(text);
+                    } catch (_) {
+                        return { message: text };
+                    }
+                }
+
+                async function loadDailyDigest() {
+                    digestStatus.textContent = "Loading latest digest...";
+                    try {
+                        const res = await fetch("/assistant/daily-digest/latest");
+                        const data = await parseJsonResponse(res);
+
+                        if (!res.ok) {
+                            digestContent.textContent = data.message || "No digest available yet.";
+                            digestStatus.textContent = "Waiting for first scheduled run";
+                            return;
+                        }
+
+                        const digest = data.digest || {};
+                        digestContent.textContent = digest.digest_markdown || "Digest is empty.";
+                        digestExpanded = false;
+                        updateDigestBoundaryControls();
+
+                        const generatedAt = formatWhen(digest.generated_at || digest.created_at);
+                        const headlineCount = (digest.headlines || []).length;
+                        digestStatus.textContent = "Updated: " + generatedAt + " | " + headlineCount + " headlines";
+                    } catch (_) {
+                        digestContent.textContent = "Could not load daily digest right now.";
+                        digestExpanded = false;
+                        updateDigestBoundaryControls();
+                        digestStatus.textContent = "Digest unavailable";
+                    }
+                }
+
                 async function loadConversationMessages(sessionId) {
                     const res = await fetch(
                         "/assistant/conversations/" + encodeURIComponent(sessionId) + "?user_id=" + encodeURIComponent(CHAT_USER_ID) + "&limit=100"
                     );
-                    const data = await res.json();
+                    const data = await parseJsonResponse(res);
                     if (!res.ok) throw new Error("Failed to load conversation");
 
                     currentChatLog.innerHTML = "";
@@ -355,7 +468,7 @@ def home() -> str:
                 async function loadConversationSummaries() {
                     try {
                         const res = await fetch("/assistant/conversations?user_id=" + encodeURIComponent(CHAT_USER_ID) + "&limit=30");
-                        const data = await res.json();
+                        const data = await parseJsonResponse(res);
                         if (!res.ok) return;
 
                         const items = data.conversations || [];
@@ -382,9 +495,77 @@ def home() -> str:
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ text })
                     });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error("Audio synthesis failed");
+                    const data = await parseJsonResponse(res);
+                    if (!res.ok) throw new Error(data.message || "Audio synthesis failed");
                     await setAndPlayAudio(data.audio_base64);
+                }
+
+                function resetMediaRecorderState() {
+                    if (mediaStream) {
+                        for (const track of mediaStream.getTracks()) {
+                            track.stop();
+                        }
+                    }
+                    mediaRecorder = null;
+                    mediaStream = null;
+                    recordedChunks = [];
+                }
+
+                async function sendRecordedVoice(blob) {
+                    if (!currentSessionId) {
+                        currentSessionId = makeSessionId();
+                    }
+
+                    chatMeta.textContent = "Sending voice request...";
+                    actionBtn.disabled = true;
+
+                    try {
+                        const form = new FormData();
+                        form.append("file", blob, "voice-input.webm");
+                        form.append("user_id", CHAT_USER_ID);
+                        form.append("session_id", currentSessionId);
+                        form.append("enable_tools", "true");
+
+                        const res = await fetch("/assistant/voice/chat", {
+                            method: "POST",
+                            body: form,
+                        });
+                        const data = await parseJsonResponse(res);
+
+                        if (!res.ok) {
+                            addBubble("assistant", "Voice request failed: " + JSON.stringify(data));
+                            chatMeta.textContent = "Voice status: failed";
+                            return;
+                        }
+
+                        if (data.session_id) {
+                            currentSessionId = data.session_id;
+                        }
+
+                        if (data.transcript) {
+                            addBubble("user", data.transcript);
+                            chatInput.value = data.transcript;
+                        }
+
+                        addBubble("assistant", data.answer || "(no answer)");
+                        chatMeta.textContent = "Tool used: " + (data.used_tool || "none");
+
+                        if (data.audio_base64) {
+                            try {
+                                await setAndPlayAudio(data.audio_base64);
+                            } catch (_) {
+                                chatMeta.textContent += " | Audio: use built-in player controls";
+                            }
+                        }
+
+                        await loadConversationSummaries();
+                    } catch (err) {
+                        addBubble("assistant", "Error: " + err.message);
+                        chatMeta.textContent = "Voice status: network error";
+                    } finally {
+                        actionBtn.disabled = false;
+                        updateActionButton();
+                    }
                 }
 
                 async function sendChat() {
@@ -411,7 +592,7 @@ def home() -> str:
                                 enable_tools: true
                             })
                         });
-                        const data = await res.json();
+                        const data = await parseJsonResponse(res);
                         if (!res.ok) {
                             addBubble("assistant", "Request failed: " + JSON.stringify(data));
                             chatMeta.textContent = "Status: " + res.status;
@@ -467,7 +648,7 @@ def home() -> str:
                             method: "POST",
                             body: form,
                         });
-                        const data = await res.json();
+                        const data = await parseJsonResponse(res);
                         if (!res.ok) {
                             addBubble("assistant", "Document analysis failed: " + JSON.stringify(data));
                             chatMeta.textContent = "Status: " + res.status;
@@ -527,62 +708,56 @@ def home() -> str:
 
                     const rec = new SpeechRecognition();
                     rec.lang = "en-US";
+                    rec.continuous = true;
                     rec.interimResults = true;
                     rec.maxAlternatives = 1;
                     return rec;
                 }
 
                 function startSpeechCapture() {
-                    speechRecognition = createSpeechRecognition();
-                    if (!speechRecognition) {
-                        voiceStatus.textContent = "Voice status: speech recognition unsupported in this browser";
+                    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) || !window.MediaRecorder) {
+                        voiceStatus.textContent = "Voice status: microphone capture unsupported in this browser";
                         return;
                     }
 
-                    let finalTranscript = "";
-                    isRecording = true;
-                    voiceStatus.textContent = "Voice status: listening...";
-                    updateActionButton();
+                    navigator.mediaDevices.getUserMedia({ audio: true })
+                        .then((stream) => {
+                            mediaStream = stream;
+                            recordedChunks = [];
+                            mediaRecorder = new MediaRecorder(stream);
 
-                    speechRecognition.onresult = (event) => {
-                        let interim = "";
-                        for (let i = event.resultIndex; i < event.results.length; i += 1) {
-                            const text = event.results[i][0].transcript;
-                            if (event.results[i].isFinal) {
-                                finalTranscript += text + " ";
-                            } else {
-                                interim += text;
-                            }
-                        }
-                        const combined = (finalTranscript + interim).trim();
-                        if (combined) {
-                            chatInput.value = combined;
+                            mediaRecorder.ondataavailable = (event) => {
+                                if (event.data && event.data.size > 0) {
+                                    recordedChunks.push(event.data);
+                                }
+                            };
+
+                            mediaRecorder.onstop = async () => {
+                                isRecording = false;
+                                voiceStatus.textContent = "Voice status: processing voice...";
+                                updateActionButton();
+
+                                const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+                                resetMediaRecorderState();
+
+                                if (blob.size < 1) {
+                                    voiceStatus.textContent = "Voice status: no audio captured. Check mic permission/device and try again.";
+                                    addBubble("assistant", "I could not hear audio. Please allow microphone access and speak, then click End Voice Input.");
+                                    return;
+                                }
+
+                                await sendRecordedVoice(blob);
+                                voiceStatus.textContent = "Voice status: complete";
+                            };
+
+                            isRecording = true;
+                            voiceStatus.textContent = "Voice status: listening... click End Voice Input when done";
                             updateActionButton();
-                        }
-                    };
-
-                    speechRecognition.onerror = () => {
-                        voiceStatus.textContent = "Voice status: microphone permission denied or unavailable";
-                    };
-
-                    speechRecognition.onend = () => {
-                        isRecording = false;
-                        const captured = (chatInput.value || "").trim();
-                        if (captured) {
-                            voiceStatus.textContent = "Voice status: captured speech. Review/edit and send.";
-                        } else {
-                            voiceStatus.textContent = "Voice status: no speech captured";
-                        }
-                        updateActionButton();
-                    };
-
-                    try {
-                        speechRecognition.start();
-                    } catch (_) {
-                        isRecording = false;
-                        voiceStatus.textContent = "Voice status: could not start microphone";
-                        updateActionButton();
-                    }
+                            mediaRecorder.start();
+                        })
+                        .catch(() => {
+                            voiceStatus.textContent = "Voice status: microphone permission denied or unavailable";
+                        });
                 }
 
                 function stopSpeechCapture() {
@@ -592,6 +767,18 @@ def home() -> str:
                             speechRecognition.stop();
                         } catch (_) {
                             isRecording = false;
+                            updateActionButton();
+                        }
+                        return;
+                    }
+
+                    if (mediaRecorder && isRecording) {
+                        voiceStatus.textContent = "Voice status: ending capture...";
+                        try {
+                            mediaRecorder.stop();
+                        } catch (_) {
+                            isRecording = false;
+                            resetMediaRecorderState();
                             updateActionButton();
                         }
                     }
@@ -641,9 +828,15 @@ def home() -> str:
                 });
 
                 chatInput.addEventListener("input", updateActionButton);
+                refreshDigestBtn.addEventListener("click", loadDailyDigest);
+                toggleDigestBtn.addEventListener("click", () => {
+                    digestExpanded = !digestExpanded;
+                    updateDigestBoundaryControls();
+                });
                 updateSelectedFileLabel();
                 updateActionButton();
                 currentChatLog.innerHTML = "";
+                loadDailyDigest();
                 loadConversationSummaries();
             </script>
         </body>
@@ -802,6 +995,30 @@ def get_history(user_id: str, limit: int = 20) -> JSONResponse:
     return JSONResponse({"user_id": clean_user, "count": len(messages), "messages": messages})
 
 
+@app.get("/assistant/daily-digest/latest")
+def get_latest_daily_digest() -> JSONResponse:
+    digest = history_store.get_latest_daily_digest()
+    if not digest:
+        return JSONResponse(
+            {
+                "ok": False,
+                "message": "No daily digest is stored yet. It will appear after the first scheduled run.",
+            },
+            status_code=404,
+        )
+
+    # Keep digest payload within the same boundary used for chat input/history handling.
+    # Do not raise on over-limit content; truncate for display instead.
+    raw_digest = (digest.get("digest_markdown") or "").strip()
+    if len(raw_digest) > settings.max_input_chars:
+        suffix = "\n\n[...truncated for display...]"
+        keep = max(0, settings.max_input_chars - len(suffix))
+        raw_digest = raw_digest[:keep].rstrip() + suffix
+    digest["digest_markdown"] = raw_digest
+
+    return JSONResponse({"ok": True, "digest": digest})
+
+
 @app.post("/assistant/voice/transcribe")
 async def transcribe_audio(file: UploadFile = File(...)) -> JSONResponse:
     data = await file.read()
@@ -833,7 +1050,13 @@ async def voice_chat(
     if not data:
         raise HTTPException(status_code=400, detail="Audio file is empty")
 
-    transcript = _transcribe_bytes(data, file.filename or "", file.content_type or "")
+    try:
+        transcript = _transcribe_bytes(data, file.filename or "", file.content_type or "")
+    except google_exceptions.PermissionDenied:
+        raise HTTPException(status_code=503, detail="Speech-to-Text API permission denied. Check Cloud Run service account IAM roles.")
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Speech transcription failed: {exc}")
+
     clean_text = sanitize_text(transcript, settings.max_input_chars)
 
     resolved_session_id = history_store.save_message(
@@ -854,7 +1077,10 @@ async def voice_chat(
         session_id=resolved_session_id or session_id,
     )
     answer_clean = sanitize_text(answer, 1000)
-    audio_b64 = _synthesize_text_to_base64(answer_clean)
+    try:
+        audio_b64 = _synthesize_text_to_base64(answer_clean)
+    except Exception:
+        audio_b64 = ""
 
     return JSONResponse(
         {

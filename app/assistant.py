@@ -35,23 +35,26 @@ class AssistantService:
             return ToolCall(tool="none", arguments={}, rationale="Fallback on parse failure")
 
     async def _execute_tool(self, tool_call: ToolCall) -> Dict[str, Any]:
-        if tool_call.tool == "web_search":
-            return await registry.web_search(tool_call.arguments.get("query", ""))
-        if tool_call.tool == "firestore_lookup":
-            return await registry.firestore_lookup(
-                tool_call.arguments.get("collection", "knowledge"),
-                tool_call.arguments.get("doc_id", ""),
-            )
-        if tool_call.tool == "call_cloud_function":
-            return await registry.call_cloud_function(
-                tool_call.arguments.get("action", ""),
-                tool_call.arguments.get("payload", {}),
-            )
-        if tool_call.tool == "shell_command":
-            return await registry.shell_command(tool_call.arguments.get("command", ""))
-        if tool_call.tool == "http_api":
-            return await registry.http_api(tool_call.arguments.get("url", ""))
-        return {"ok": True, "message": "No tool used"}
+        try:
+            if tool_call.tool == "web_search":
+                return await registry.web_search(tool_call.arguments.get("query", ""))
+            if tool_call.tool == "firestore_lookup":
+                return await registry.firestore_lookup(
+                    tool_call.arguments.get("collection", "knowledge"),
+                    tool_call.arguments.get("doc_id", ""),
+                )
+            if tool_call.tool == "call_cloud_function":
+                return await registry.call_cloud_function(
+                    tool_call.arguments.get("action", ""),
+                    tool_call.arguments.get("payload", {}),
+                )
+            if tool_call.tool == "shell_command":
+                return await registry.shell_command(tool_call.arguments.get("command", ""))
+            if tool_call.tool == "http_api":
+                return await registry.http_api(tool_call.arguments.get("url", ""))
+            return {"ok": True, "message": "No tool used"}
+        except Exception as exc:
+            return {"ok": False, "error": f"Tool execution failed: {exc}"}
 
     async def respond(self, user_text: str, enable_tools: bool = True) -> Tuple[str, Optional[str], Optional[Dict[str, Any]]]:
         tool_name = None

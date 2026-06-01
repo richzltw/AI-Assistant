@@ -11,7 +11,13 @@ from app.security import sanitize_shell_command
 
 class ToolRegistry:
     def __init__(self) -> None:
-        self.firestore_client = firestore.Client(project=settings.project_id) if settings.project_id else None
+        self.firestore_client = None
+        if settings.project_id:
+            try:
+                self.firestore_client = firestore.Client(project=settings.project_id)
+            except Exception:
+                # Local runs without ADC should still start; Firestore tool will be unavailable.
+                self.firestore_client = None
         self.allowed_shell_commands = ["echo", "date", "whoami", "pwd", "ls", "dir"]
 
     async def web_search(self, query: str) -> Dict[str, Any]:
@@ -24,14 +30,19 @@ class ToolRegistry:
         }
         params = {"q": query, "count": 5}
 
-        async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.get(
-                "https://api.search.brave.com/res/v1/web/search",
-                headers=headers,
-                params=params,
-            )
-            response.raise_for_status()
-            payload = response.json()
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.get(
+                    "https://api.search.brave.com/res/v1/web/search",
+                    headers=headers,
+                    params=params,
+                )
+                response.raise_for_status()
+                payload = response.json()
+        except httpx.HTTPError as exc:
+            return {"ok": False, "error": f"web_search request failed: {exc}"}
+        except json.JSONDecodeError:
+            return {"ok": False, "error": "web_search returned non-JSON response"}
 
         snippets = []
         for item in payload.get("web", {}).get("results", [])[:5]:
@@ -61,10 +72,22 @@ class ToolRegistry:
             headers["Authorization"] = f"Bearer {settings.function_router_token}"
 
         body = {"action": action, "payload": payload}
-        async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.post(settings.function_router_url, json=body, headers=headers)
-            response.raise_for_status()
-            return {"ok": True, "result": response.json()}
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                response = await client.post(settings.function_router_url, json=body, headers=headers)
+                response.raise_for_status()
+                return {"ok": True, "result": response.json()}
+        except httpx.HTTPStatusError as exc:
+            error_body = (exc.response.text or "").strip()[:500]
+            return {
+                "ok": False,
+                "error": f"call_cloud_function failed with HTTP {exc.response.status_code}",
+                "body": error_body,
+            }
+        except httpx.HTTPError as exc:
+            return {"ok": False, "error": f"call_cloud_function request failed: {exc}"}
+        except json.JSONDecodeError:
+            return {"ok": False, "error": "call_cloud_function returned non-JSON response"}
 
     async def shell_command(self, command: str) -> Dict[str, Any]:
         if not settings.shell_enabled:
@@ -91,13 +114,16 @@ class ToolRegistry:
         if not any(url.startswith(prefix) for prefix in allowed_prefixes):
             return {"ok": False, "error": "URL not allowed"}
 
-        async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-            try:
-                data = response.json()
-            except json.JSONDecodeError:
-                data = {"raw": response.text[:1000]}
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                try:
+                    data = response.json()
+                except json.JSONDecodeError:
+                    data = {"raw": response.text[:1000]}
+        except httpx.HTTPError as exc:
+            return {"ok": False, "error": f"http_api request failed: {exc}"}
 
         return {"ok": True, "data": data}
 

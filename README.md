@@ -56,6 +56,7 @@ This repository now includes a dedicated serverless automation that:
 - Pulls top headlines from configurable RSS feeds.
 - Produces a clean Markdown digest with Gemini summarization (fallback included).
 - Delivers the digest to Slack DM by email (bot token flow), Slack webhook, and/or SMS (Twilio) based on configured env vars.
+- Persists each run in Firestore so the latest digest appears on the homepage.
 
 Source files:
 - scripts/news_digest_function/main.py
@@ -74,6 +75,10 @@ Slack DM notes:
 - Slack DM mode is preferred when both -SlackBotToken and -SlackDmEmail are set.
 - Required bot scopes typically include users:read.email, conversations:write, and chat:write.
 - If DM delivery fails and a webhook is configured, the function falls back to webhook posting.
+
+Homepage digest panel:
+- The web UI now loads the newest digest from GET /assistant/daily-digest/latest.
+- Data source is Firestore collection daily_news_digest, written by the scheduled function.
 
 Schedule defaults:
 - Cron: 0 7 * * *
