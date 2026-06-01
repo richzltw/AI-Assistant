@@ -66,16 +66,6 @@ Source files:
 Deploy command example:
 - ./scripts/deploy_news_digest.ps1 -ProjectId YOUR_PROJECT_ID -Region us-central1 -TimeZone "America/Chicago"
 
-Optional delivery arguments:
-- -SlackWebhookUrl "https://hooks.slack.com/services/..."
-- -SlackBotToken "xoxb-..." -SlackDmEmail "lizhi1@seas.upenn.edu"
-- -TwilioAccountSid "AC..." -TwilioAuthToken "..." -TwilioFromNumber "+1..." -TwilioToNumber "+1..."
-
-Slack DM notes:
-- Slack DM mode is preferred when both -SlackBotToken and -SlackDmEmail are set.
-- Required bot scopes typically include users:read.email, conversations:write, and chat:write.
-- If DM delivery fails and a webhook is configured, the function falls back to webhook posting.
-
 Homepage digest panel:
 - The web UI now loads the newest digest from GET /assistant/daily-digest/latest.
 - Data source is Firestore collection daily_news_digest, written by the scheduled function.
