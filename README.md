@@ -1,5 +1,7 @@
 # GCP Multimodal AI Assistant
 
+The project is completed with Github Copilot.
+
 This repository contains a complete assignment-ready implementation for a cloud-native AI assistant with multimodal I/O, tool calling, security controls, and evaluation scripts.
 
 ## What is implemented
@@ -55,7 +57,6 @@ This repository now includes a dedicated serverless automation that:
 - Runs every morning at 7:00 AM via Cloud Scheduler.
 - Pulls top headlines from configurable RSS feeds.
 - Produces a clean Markdown digest with Gemini summarization (fallback included).
-- Delivers the digest to Slack DM by email (bot token flow), Slack webhook, and/or SMS (Twilio) based on configured env vars.
 - Persists each run in Firestore so the latest digest appears on the homepage.
 
 Source files:
