@@ -4,15 +4,14 @@
 This project build a cloud-hosted AI assistant that can answer questions, summarize findings, automate simple tasks, and support voice interaction.
 
 ## 2. Intended Users
-- People s who need quick decision support for scheduling, research, or planning.
-- Personal use: personal assistant for daily update and simple research.
+People who need support for daily news update, document summary and other simple research task.
 
 ## 3. Cloud Platform and Planned Services
 Platform: Google Cloud Platform (GCP)
 
 Planned cloud-native components:
 - Cloud Run: hosts the assistant backend API.
-- Cloud Functions (2nd gen): external tool endpoint for automation actions.
+- Cloud Functions: external tool endpoint for automation actions, in our case, a daily news update.
 - Firestore: lightweight persistent storage for assistant notes/facts.
 - Cloud Speech-to-Text: transcribes user voice input.
 - Cloud Text-to-Speech: converts assistant responses to audio.
@@ -20,19 +19,19 @@ Planned cloud-native components:
 
 Cross-cloud/hybrid extension:
 - Hybrid mode with local client + cloud backend (local user interface calling GCP-hosted API).
-- Optional fallback LLM provider integration for interoperability testing.
+- LLM provider integration.
 
 ## 4. Type of AI Assistant
 This project will implement a multimodal cloud AI assistant with:
-- Text chat for Q and A, planning, and summarization.
+- Text chat for Q and A, analysis, and summarization.
 - Voice input/output for accessibility and hands-free use.
-- Tool-calling support for web search, database lookup, cloud function automation, and sandboxed shell commands.
-- Practical use case: generating weekly study plans, summarizing recent topic updates, and running automation actions (for example, getting UTC time).
-- Added automation use case: a daily 7:00 AM serverless news briefing workflow that compiles headline summaries into Markdown and delivers them via Slack or SMS.
+- Tool-calling support for web search, database lookup and cloud function automation.
+- Practical use case: summarizing documents, and running simple AI assisted research.
+- Added automation use case: a daily serverless news briefing workflow that compiles headline summaries into Markdown and delivers them to the webpage.
 
 ## Proposed Deliverables
 - Deployed assistant endpoint running on Cloud Run.
-- At least one AI model/API: Gemini LLM, plus speech services.
+- One AI model/API: Gemini LLM, plus speech services.
 - Cloud-native architecture with serverless services and storage.
 - Evaluation results using defined test cases.
 - Final report with architecture, data flow, metrics, limitations, and future work.
@@ -48,6 +47,6 @@ Mitigations:
 
 ## Success Criteria
 - Assistant can accept input and return useful AI-generated output.
-- At least one practical scenario is completed end-to-end.
+- Successful daily news update is completed end-to-end.
 - Evaluation average score >= 0.70 on rubric-based test set.
 - Demonstrated multimodal value over text-only baseline.
