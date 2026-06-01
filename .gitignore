@@ -3,3 +3,10 @@ __pycache__/
 .venv/
 .env
 *.log
+docs/*_old.pdf
+docs/*_tmp.pdf
+docs/*_updated.pdf
+docs/*_margincheck*.pdf
+docs/*.docx
+docs/*.tex
+!docs/pandoc-compact-header.tex
